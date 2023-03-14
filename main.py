@@ -18,7 +18,7 @@ import util.misc as utils
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
-
+import pdb
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
@@ -102,6 +102,7 @@ def get_args_parser():
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
+    parser.add_argument('--local_rank', type=int, help='')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     return parser
 
@@ -160,7 +161,12 @@ def main(args):
     del checkpoint["vistr.class_embed.weight"]
     del checkpoint["vistr.class_embed.bias"]
     del checkpoint["vistr.query_embed.weight"]
-    model.module.load_state_dict(checkpoint,strict=False)
+
+    # distributed mode
+    # model.module.load_state_dict(checkpoint,strict=False)
+
+    # single mode
+    model.load_state_dict(checkpoint,strict=False)
 
     if args.resume:
         if args.resume.startswith('https'):
@@ -175,6 +181,7 @@ def main(args):
             args.start_epoch = checkpoint['epoch'] + 1
 
     print("Start training")
+    # pdb.set_trace()
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
