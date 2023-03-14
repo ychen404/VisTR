@@ -20,12 +20,21 @@ elif [ $1 == 'small' ]
 then
     echo "training small transformer"
     python main.py --backbone resnet50 \
-    --enc_layers 2 \
-    --dec_layers 2 \
-    --nheads 2 \
-    --num_frames 3 \
+    --num_frames 1 \
+    --num_queries 5 \
     --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
     --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'debug' ] # add a simple case for pdb
+then
+    python -m pdb main.py --backbone resnet50 \
+        --num_frames 3 \
+        --num_queries 15 \
+        --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+        --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
 else
     echo "Not supported argument"
 fi
+
+    # --enc_layers 2 \
+    # --dec_layers 2 \
+    # --nheads 2 \

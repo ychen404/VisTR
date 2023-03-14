@@ -17,7 +17,11 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, num_frames : int = 36, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1):
+    def __init__(self, num_frames : int = 36, 
+                 num_out : int = 10, 
+                 cost_class: float = 1, 
+                 cost_bbox: float = 1, 
+                 cost_giou: float = 1):
         """Creates the matcher
 
         Params:
@@ -30,6 +34,7 @@ class HungarianMatcher(nn.Module):
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
         self.num_frames = num_frames
+        self.num_out = num_out
         assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
 
     @torch.no_grad()
@@ -44,8 +49,21 @@ class HungarianMatcher(nn.Module):
             tgt_ids = targets[i]["labels"]
             tgt_bbox = targets[i]["boxes"]
             tgt_valid = targets[i]["valid"]
-            num_out = 10
+            
+            
+            
+            
+            # VisTR recommend to perform 10 queries for each frame
+            # This num_out seems to reflect that decision. But a hard-coded number will cause size mis match with a reduced transformer
+            # So, instead of hardcoding the value, we use args.num_frames and args.num_queries to calculate the num_out
+            # num_out = args.num_queries // args.num_frames
+            # since here args.num_queries is used directly from the output, we don't have to get it from the args
+            # num_out = 10 
+            
+            num_out = num_queries // self.num_frames
+
             num_tgt = len(tgt_ids)//self.num_frames
+            
             out_prob_split = out_prob.reshape(self.num_frames,num_out,out_prob.shape[-1]).permute(1,0,2)
             out_bbox_split = out_bbox.reshape(self.num_frames,num_out,out_bbox.shape[-1]).permute(1,0,2).unsqueeze(1)
             tgt_bbox_split = tgt_bbox.reshape(num_tgt,self.num_frames,4).unsqueeze(0)
@@ -71,4 +89,8 @@ class HungarianMatcher(nn.Module):
         return indices
 
 def build_matcher(args):
-    return HungarianMatcher(num_frames = args.num_frames, cost_class=args.set_cost_class, cost_bbox=args.set_cost_bbox, cost_giou=args.set_cost_giou)
+    return HungarianMatcher(num_frames=args.num_frames, 
+                            num_out=args.num_queries // args.num_frames,
+                            cost_class=args.set_cost_class, 
+                            cost_bbox=args.set_cost_bbox, 
+                            cost_giou=args.set_cost_giou)

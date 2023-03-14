@@ -162,11 +162,12 @@ def main(args):
     del checkpoint["vistr.class_embed.bias"]
     del checkpoint["vistr.query_embed.weight"]
 
-    # distributed mode
-    # model.module.load_state_dict(checkpoint,strict=False)
-
-    # single mode
-    model.load_state_dict(checkpoint,strict=False)
+    if args.distributed:
+        # distributed mode
+        model.module.load_state_dict(checkpoint,strict=False)
+    else:
+        # single mode
+        model.load_state_dict(checkpoint,strict=False)
 
     if args.resume:
         if args.resume.startswith('https'):
