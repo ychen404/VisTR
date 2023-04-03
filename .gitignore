@@ -113,3 +113,5 @@ __MACOSX/
 
 # pretrained weights
 pretrained_weights/*
+r101_vistr/*
+results/*

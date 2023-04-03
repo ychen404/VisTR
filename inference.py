@@ -138,7 +138,6 @@ transform = T.Compose([
     T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
-
 # for output bounding box post-processing
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(1)
@@ -151,8 +150,6 @@ def rescale_bboxes(out_bbox, size):
     b = box_cxcywh_to_xyxy(out_bbox)
     b = b.cpu() * torch.tensor([img_w, img_h, img_w, img_h], dtype=torch.float32)
     return b
-
-
 
 def main(args):
 
@@ -173,6 +170,7 @@ def main(args):
         folder = args.img_path
         videos = json.load(open(args.ann_path,'rb'))['videos']
         vis_num = len(videos)
+        print(f"Number of videos: {vis_num}")
         result = [] 
         for i in range(vis_num):
             print("Process video: ",i)
@@ -227,9 +225,6 @@ def main(args):
         json.dump(result,f)
                     
         
-
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('VisTR inference script', parents=[get_args_parser()])
     args = parser.parse_args()

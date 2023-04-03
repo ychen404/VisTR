@@ -20,8 +20,17 @@ elif [ $1 == 'small' ]
 then
     echo "training small transformer"
     python main.py --backbone resnet50 \
-    --num_frames 1 \
-    --num_queries 5 \
+    --num_frames 3 \
+    --num_queries 6 \
+    --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+    --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'small_dist' ]
+then
+    echo "training small transformer dist"
+    python -m torch.distributed.launch --nproc_per_node=4 \
+    main.py --backbone resnet50 \
+    --num_frames 3 \
+    --num_queries 6 \
     --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
     --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'debug' ] # add a simple case for pdb
