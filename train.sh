@@ -35,11 +35,32 @@ then
     --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'debug' ] # add a simple case for pdb
 then
-    python -m pdb main.py --backbone resnet50 \
+    CUDA_VISIBLE_DEVICES=0 python -m pdb main.py --backbone resnet50 \
         --num_frames 3 \
         --num_queries 15 \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'debug_ffn' ] # add a simple case for pdb
+then
+    CUDA_VISIBLE_DEVICES=0 python -m pdb main.py --backbone resnet50 \
+        --num_frames 3 \
+        --num_queries 15 \
+        --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+        --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'debug_ffn_ee' ] # add a simple case for pdb
+then
+    CUDA_VISIBLE_DEVICES=0 python -m pdb main_ee.py --backbone resnet50 \
+        --num_frames 3 \
+        --num_queries 15 \
+        --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+        --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'ffn_ee' ] # add a simple case for pdb
+then
+    CUDA_VISIBLE_DEVICES=0 python main_ee.py --backbone resnet50 \
+        --num_frames 3 \
+        --num_queries 15 \
+        --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+        --pretrained_weights pretrained_weights/384_coco_r50.pth
 else
     echo "Not supported argument"
 fi

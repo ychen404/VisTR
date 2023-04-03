@@ -59,7 +59,8 @@ class Transformer(nn.Module):
         return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
 
 
-class TransformerWithEarlyExit(Transformer):
+class TransformerWithEarlyExit(nn.Module):
+
     def __init__(self, d_model=512, nhead=8, num_encoder_layers=6,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False,
@@ -67,6 +68,12 @@ class TransformerWithEarlyExit(Transformer):
         super().__init__()
 
         self.num_decoder_layers = num_decoder_layers
+
+        encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
+                                                dropout, activation, normalize_before)
+        encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
         decoder_norm = nn.LayerNorm(d_model)
@@ -78,6 +85,11 @@ class TransformerWithEarlyExit(Transformer):
         self.d_model = d_model
         self.nhead = nhead
 
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
     def forward(self, src, mask, query_embed, pos_embed):
         # flatten NxCxHxW to HWxNxC
         bs, c, h, w = src.shape
@@ -88,25 +100,89 @@ class TransformerWithEarlyExit(Transformer):
 
         tgt = torch.zeros_like(query_embed)
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-        
-        if self.training:
-            res = []
-            for i in range(self.num_decoder_layers):
-                decoder_outputs = self.decoder.adaptive_forward(tgt, memory, current_layer=i, memory_key_padding_mask=mask)
-                decoder_outputs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
-                res.append(decoder_outputs)
+        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
+                          pos=pos_embed, query_pos=query_embed)
+        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
 
-        elif self.patience == 0: # Use all layers for inference
-            pass
 
-        else:
-            patient_counter = 0
-            patient_result = None
-            calculated_layer_num = 0
-            for i in range(self.num_decoder_layers):
-                pass
+# class TransformerWithEarlyExit(Transformer):
+#     def __init__(self, d_model=512, nhead=8, num_encoder_layers=6,
+#                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
+#                  activation="relu", normalize_before=False,
+#                  return_intermediate_dec=False):
+#         super().__init__()
 
-        return res
+#         self.num_decoder_layers = num_decoder_layers
+#         # decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
+#         #                                         dropout, activation, normalize_before)
+#         # decoder_norm = nn.LayerNorm(d_model)
+#         # self.decoder = TransformerDecoderWithEarlyExit(decoder_layer, num_decoder_layers, decoder_norm,
+#         #                                   return_intermediate=return_intermediate_dec)
+
+#         # self.d_model = d_model
+#         # self.nhead = nhead
+
+
+#         #################### PABEE
+#         self.patience = 0
+#         self.inference_instances_num = 0
+#         self.inference_layers_num = 0
+
+#         self.regression_threshold = 0
+
+#     def set_regression_threshold(self, threshold):
+#         self.regression_threshold = threshold
+
+#     def set_patience(self, patience):
+#         self.patience = patience
+
+#     def reset_stats(self):
+#         self.inference_instances_num = 0
+#         self.inference_layers_num = 0
+
+#     def log_stats(self):
+#         avg_inf_layers = self.inference_layers_num / self.inference_instances_num
+#         message = (
+#             f"*** Patience = {self.patience} Avg. Inference Layers = {avg_inf_layers:.2f} Speed Up ="
+#             f" {1 - avg_inf_layers / self.config.num_hidden_layers:.2f} ***"
+#         )
+#         print(message)
+
+    # def forward(self, src, mask, query_embed, pos_embed, output_layers=None):
+    #     # flatten NxCxHxW to HWxNxC
+    #     bs, c, h, w = src.shape
+    #     src = src.flatten(2).permute(2, 0, 1)
+    #     pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
+    #     query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)
+    #     mask = mask.flatten(1)
+
+    #     tgt = torch.zeros_like(query_embed)
+    #     memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
+    #     hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
+    #                       pos=pos_embed, query_pos=query_embed)
+    #     return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+    
+        # if self.training:
+        #     res = []
+        #     for i in range(self.num_decoder_layers):
+        #         decoder_outputs = self.decoder.adaptive_forward(tgt, memory, current_layer=i, memory_key_padding_mask=mask)
+        #         decoder_outputs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+        #         res.append(decoder_outputs)
+
+        # elif self.patience == 0: # Use all layers for inference
+        #     decoder_outputs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
+        #                   pos=pos_embed, query_pos=query_embed)
+        #     res = [output_layers[self.num_decoder_layers - 1](pooled_output)]
+
+
+        # else:
+        #     patient_counter = 0
+        #     patient_result = None
+        #     calculated_layer_num = 0
+        #     for i in range(self.num_decoder_layers):
+        #         pass
+
+        # return res
 
 class TransformerEncoder(nn.Module):
 
@@ -203,6 +279,8 @@ class TransformerEncoderLayer(nn.Module):
         q = k = self.with_pos_embed(src, pos)
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
+        # print("hererererererererer")
+        # exit()
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -384,8 +462,6 @@ def build_transformer_with_early_exit(args):
         normalize_before=args.pre_norm,
         return_intermediate_dec=True,
     )
-
-
 
 def _get_activation_fn(activation):
     """Return an activation function given a string"""
