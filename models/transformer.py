@@ -102,7 +102,20 @@ class TransformerWithEarlyExit(nn.Module):
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
         hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed)
-        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+        
+        if self.training:
+            res = [] 
+            # for i in range(self.num_decoder_layers - 1):
+            for i in range(self.num_decoder_layers):
+                decoder_outputs = self.decoder.adaptive_forward(tgt, memory, current_layer=i, memory_key_padding_mask=mask,
+                                                            pos=pos_embed, query_pos=query_embed)
+                decoder_outputs = decoder_outputs.transpose(1, 2)
+                res.append(decoder_outputs)
+        
+        # return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+        # return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w), res
+        return res, memory.permute(1, 2, 0).view(bs, c, h, w)
+
 
 
 # class TransformerWithEarlyExit(Transformer):
@@ -279,8 +292,6 @@ class TransformerEncoderLayer(nn.Module):
         q = k = self.with_pos_embed(src, pos)
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
-        # print("hererererererererer")
-        # exit()
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -447,7 +458,9 @@ def build_transformer(args):
         num_encoder_layers=args.enc_layers,
         num_decoder_layers=args.dec_layers,
         normalize_before=args.pre_norm,
-        return_intermediate_dec=True,
+        # return_intermediate_dec=True,
+        return_intermediate_dec=False, # test without intermediate results
+
     )
 
 
@@ -460,7 +473,8 @@ def build_transformer_with_early_exit(args):
         num_encoder_layers=args.enc_layers,
         num_decoder_layers=args.dec_layers,
         normalize_before=args.pre_norm,
-        return_intermediate_dec=True,
+        # return_intermediate_dec=True,
+        return_intermediate_dec=False, # do need intermediate output
     )
 
 def _get_activation_fn(activation):

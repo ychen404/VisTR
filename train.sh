@@ -40,6 +40,13 @@ then
         --num_queries 15 \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
+elif [ $1 == 'ffn' ] # add a simple case for pdb
+then
+    CUDA_VISIBLE_DEVICES=0 python main.py --backbone resnet50 \
+        --num_frames 3 \
+        --num_queries 15 \
+        --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
+        --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'debug_ffn' ] # add a simple case for pdb
 then
     CUDA_VISIBLE_DEVICES=0 python -m pdb main.py --backbone resnet50 \

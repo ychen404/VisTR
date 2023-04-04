@@ -73,12 +73,27 @@ class VisTR(nn.Module):
         pos = pos.permute(0,2,1,3,4).flatten(-2)
         hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)[0]
 
-        outputs_class = self.class_embed(hs)
-        outputs_coord = self.bbox_embed(hs).sigmoid()
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
-        if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+        # TODO: this does not support intermediate_output=False
+        if len(hs.shape) == 4:
+            # intermediate_output=True
+            outputs_class = self.class_embed(hs)
+            outputs_coord = self.bbox_embed(hs).sigmoid()
+            out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+            if self.aux_loss:
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+        else:
+            # intermediate_output=False
+            # hs has a shape of [15, 384, 1]
+            # need to reshape to [1, 15, 384] for class_embed and bbox_embed
+            hs = hs.permute(2,0,1)
+            outputs_class = self.class_embed(hs)
+            outputs_coord = self.bbox_embed(hs).sigmoid()
+            out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
+            if self.aux_loss:
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+        
         return out
+
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
@@ -148,23 +163,30 @@ class VisTRWithEarlyExit(nn.Module):
         mask = mask.reshape(n//self.num_frames, self.num_frames, h*w)
         pos = pos.permute(0,2,1,3,4).flatten(-2)
 
-        ###### TODO: check. hs here should have multiple objects, each object corresponds to a decoder layer output
-        hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)[0]
+        ###### TODO: hs should have multiple objects without using the intermediate flag
+        ###### each object corresponds to a decoder layer output
+        other_hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)[0]
+        # hs, _, other_hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)
         
-        ###### TODO: add each decoder layer output
+        ###### Calculate each decoder layer's output
         res = []
         for i in range(self.num_decoder_layers):
-            outputs_class = self.class_embeds[i](hs)
-            outputs_coord = self.bbox_embeds[i](hs).sigmoid()
-            out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+            other_hs[i] = other_hs[i].permute(2,0,1)
+            outputs_class = self.class_embeds[i](other_hs[i])
+            # print(f"the current output index is: {i}")
+            assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
+            outputs_coord = self.bbox_embeds[i](other_hs[i]).sigmoid()
+            assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
+
+            out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
             res.append(out)
-        print(len(res))
         
-        ###### TODO: change the train_one_epoch_with_early_exit to correspond the out
+        # print(len(res))
+        
+        ###### return a list of outputs in res
         return res
-        return out
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
@@ -437,7 +459,6 @@ def build(args):
     if args.masks:
         postprocessors['segm'] = PostProcessSegm()
     return model, criterion, postprocessors
-
 
 def build_early_exit(args):
     if args.dataset_file == "ytvos":
