@@ -115,3 +115,5 @@ __MACOSX/
 pretrained_weights/*
 r101_vistr/*
 results/*
+
+res50_ee_*/

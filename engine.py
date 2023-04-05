@@ -70,7 +70,7 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 100
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -78,7 +78,9 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
 
         #### TODO: here we want to use criterion to each decoder layer
         #### so we should expect the 'outputs' contains the output from each decoder layer
+
         # loss_dict = criterion(outputs, targets)
+
         total_loss = 0
         for output_item in outputs:
             loss_dict = criterion(output_item, targets)
@@ -108,18 +110,19 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
         if max_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
-        # exit()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
+        ############## make a simple model to test inference
+        break
+        ##############
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
-
 
 
 @torch.no_grad()

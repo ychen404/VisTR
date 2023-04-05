@@ -85,6 +85,31 @@ class TransformerWithEarlyExit(nn.Module):
         self.d_model = d_model
         self.nhead = nhead
 
+    #################### PABEE
+        self.patience = 0
+        self.inference_instances_num = 0
+        self.inference_layers_num = 0
+
+        self.regression_threshold = 0
+
+    def set_regression_threshold(self, threshold):
+        self.regression_threshold = threshold
+
+    def set_patience(self, patience):
+        self.patience = patience
+
+    def reset_stats(self):
+        self.inference_instances_num = 0
+        self.inference_layers_num = 0
+
+    def log_stats(self):
+        avg_inf_layers = self.inference_layers_num / self.inference_instances_num
+        message = (
+            f"*** Patience = {self.patience} Avg. Inference Layers = {avg_inf_layers:.2f} Speed Up ="
+            f" {1 - avg_inf_layers / self.config.num_hidden_layers:.2f} ***"
+        )
+        print(message)
+
     def _reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
@@ -103,6 +128,8 @@ class TransformerWithEarlyExit(nn.Module):
         hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed)
         
+        self.use_all_layers = False
+
         if self.training:
             res = [] 
             # for i in range(self.num_decoder_layers - 1):
@@ -111,6 +138,56 @@ class TransformerWithEarlyExit(nn.Module):
                                                             pos=pos_embed, query_pos=query_embed)
                 decoder_outputs = decoder_outputs.transpose(1, 2)
                 res.append(decoder_outputs)
+        # elif self.patience == 0: # Use all layers for inference
+        elif self.use_all_layers:
+            print("using all the layers for inference")
+            # the default forward path goes through all the decoder layers
+            decoder_outputs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
+                          pos=pos_embed, query_pos=query_embed)
+            decoder_outputs = decoder_outputs.transpose(1, 2)
+            res = [decoder_outputs]
+        else:
+            patient_counter = 0
+            patient_result = None
+            calculated_layer_num = 0
+            early_exit_layer = 5
+            for i in range(self.num_decoder_layers):
+                calculated_layer_num += 1
+                decoder_outputs = self.decoder.adaptive_forward(tgt, memory, current_layer=i, memory_key_padding_mask=mask,
+                                                            pos=pos_embed, query_pos=query_embed)
+                
+                # add a simple test here. 
+                if i == early_exit_layer:
+                    break
+
+                regression = False # no need. remove later
+                # logits = output_layers[i](pooled_output)
+
+                ##### need to add the comparison logic here
+                # if regression:
+                #     labels = logits.detach()
+                #     if patient_result is not None:
+                #         patient_labels = patient_result.detach()
+                #     if (patient_result is not None) and torch.abs(patient_result - labels) < self.regression_threshold:
+                #         patient_counter += 1
+                #     else:
+                #         patient_counter = 0
+                # else:
+                #     labels = logits.detach().argmax(dim=1)
+                #     if patient_result is not None:
+                #         patient_labels = patient_result.detach().argmax(dim=1)
+                #     if (patient_result is not None) and torch.all(labels.eq(patient_labels)):
+                #         patient_counter += 1
+                #     else:
+                #         patient_counter = 0
+
+                patient_result = decoder_outputs
+                if patient_counter == self.patience:
+                    break
+            res = [patient_result]
+            self.inference_layers_num += calculated_layer_num
+            self.inference_instances_num += 1
+
         
         # return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
         # return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w), res
@@ -405,10 +482,6 @@ class TransformerDecoderLayer(nn.Module):
                                     tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
         return self.forward_post(tgt, memory, tgt_mask, memory_mask,
                                  tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
-
-
-# class TransformerDecoderLayerWithEarlyExit(TransformerDecoderLayer):
-#     pass
 
 
 class TransformerDecoderWithEarlyExit(TransformerDecoder):
