@@ -56,9 +56,14 @@ then
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'ffn_ee_debug' ] # add a simple case for pdb
 then
-    CUDA_VISIBLE_DEVICES=0 python -m pdb main_ee.py --backbone resnet50 \
+    ee=0
+    echo "Early-exit from $ee layer"
+    python -m pdb main_ee.py --backbone resnet50 \
         --num_frames 3 \
         --num_queries 15 \
+        --epochs 1 \
+        --early_exit_layer $ee \
+        --output_dir res50_ee_"$ee"_1_batch_test \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'ffn_ee' ] # add a simple case for pdb
@@ -70,17 +75,17 @@ then
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'ffn_ee_dist' ] # add a simple case for pdb
 then
+    ee=0
+    echo "Early-exit from $ee layer"
     python main_ee.py --backbone resnet50 \
         --num_frames 3 \
         --num_queries 15 \
         --epochs 1 \
-        --output_dir res50_ee_5_1_batch \
+        --early_exit_layer $ee \
+        --output_dir res50_ee_"$ee"_1_batch_test \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth 
+                        # --output_dir test_print \
 else
     echo "Not supported argument"
 fi
-
-    # --enc_layers 2 \
-    # --dec_layers 2 \
-    # --nheads 2 \

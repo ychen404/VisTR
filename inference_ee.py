@@ -120,6 +120,10 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+    
+    parser.add_argument('--early_exit_layer', default=5, type=int,
+                        help="early exit layer (0 to 5)")
+
     return parser
 
 CLASSES=['person','giant_panda','lizard','parrot','skateboard','sedan','ape',
@@ -162,8 +166,14 @@ def main(args):
     random.seed(seed)
     num_frames = args.num_frames
     num_ins = args.num_ins
+
+    model, criterion, postprocessors = build_model_early_exit(args)
+    
+    # we need this to go for the early exit route
+    model.eval()
+    
     with torch.no_grad():
-        model, criterion, postprocessors = build_model_early_exit(args)
+        # model, criterion, postprocessors = build_model_early_exit(args)
         model.to(device)
         state_dict = torch.load(args.model_path)['model']
         model.load_state_dict(state_dict)
@@ -193,12 +203,18 @@ def main(args):
                 clip_names.extend(file_names[:num_frames-len(clip_names)])
             for k in range(num_frames):
                 im = Image.open(os.path.join(folder,clip_names[k]))
-                img_set.append(transform(im).unsqueeze(0).cuda())
+                if device.type == 'cuda':
+                    # print("using cuda")
+                    img_set.append(transform(im).unsqueeze(0).cuda())
+                else:
+                    img_set.append(transform(im).unsqueeze(0))
             img=torch.cat(img_set,0)
             # inference time is calculated for this operation
             # outputs = model(img)
             start_time = time.time()
-            outputs = model(img)[0]
+            img.to(device)
+
+            outputs = model(img)[0] # the first output is what we need
             time_per_video = time.time() - start_time
             total_inference_time += time_per_video
             # end of model inference

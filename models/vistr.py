@@ -94,7 +94,6 @@ class VisTR(nn.Module):
         
         return out
 
-
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
         # this is a workaround to make torchscript happy, as torchscript
@@ -105,7 +104,7 @@ class VisTR(nn.Module):
     
 class VisTRWithEarlyExit(nn.Module):
     """ This is the VisTR module that performs video object detection """
-    def __init__(self, backbone, transformer, num_classes, num_frames, num_queries, aux_loss=False):
+    def __init__(self, backbone, transformer, early_exit_layer, num_classes, num_frames, num_queries, aux_loss=False):
         """ Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -119,6 +118,7 @@ class VisTRWithEarlyExit(nn.Module):
         super().__init__()
         self.num_queries = num_queries
         self.transformer = transformer
+        self.early_exit_layer = early_exit_layer
         
         self.num_decoder_layers = transformer.num_decoder_layers
         hidden_dim = transformer.d_model
@@ -169,13 +169,26 @@ class VisTRWithEarlyExit(nn.Module):
         # hs, _, other_hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)
         
         ###### Calculate each decoder layer's output
+        
         res = []
-        for i in range(self.num_decoder_layers):
-            other_hs[i] = other_hs[i].permute(2,0,1)
-            outputs_class = self.class_embeds[i](other_hs[i])
-            # print(f"the current output index is: {i}")
+
+        if self.early_exit_layer > 0:
+            for i in range(self.early_exit_layer):
+                other_hs[i] = other_hs[i].permute(2,0,1)
+                outputs_class = self.class_embeds[i](other_hs[i])
+                # print(f"the current output index is: {i}")
+                assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
+                outputs_coord = self.bbox_embeds[i](other_hs[i]).sigmoid()
+                assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
+                out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
+                if self.aux_loss:
+                    out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+                res.append(out)
+        elif self.early_exit_layer == 0: # self.early_exit_layer == 0
+            other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1)
+            outputs_class = self.class_embeds[self.early_exit_layer](other_hs[self.early_exit_layer])
             assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
-            outputs_coord = self.bbox_embeds[i](other_hs[i]).sigmoid()
+            outputs_coord = self.bbox_embeds[self.early_exit_layer](other_hs[self.early_exit_layer]).sigmoid()
             assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
 
             out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
@@ -183,8 +196,10 @@ class VisTRWithEarlyExit(nn.Module):
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
             res.append(out)
         
-        # print(len(res))
-        
+        else:
+            print("early_exit_layer not correct")
+            exit()
+
         ###### return a list of outputs in res
         return res
 
@@ -472,10 +487,12 @@ def build_early_exit(args):
     model = VisTRWithEarlyExit(
         backbone,
         transformer,
+        early_exit_layer=args.early_exit_layer,
         num_classes=num_classes,
         num_frames=args.num_frames,
         num_queries=args.num_queries,
         aux_loss=args.aux_loss,
+
     )
     if args.masks:
         model = VisTRsegm(model)

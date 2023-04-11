@@ -104,6 +104,9 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--local_rank', type=int, help='')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    parser.add_argument('--early_exit_layer', default=5, type=int,
+                        help="early exit layer (0 to 5)")
     return parser
 
 
