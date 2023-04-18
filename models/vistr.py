@@ -261,9 +261,27 @@ class VisTRWithEarlyExit(nn.Module):
         self.backbone = backbone
         self.aux_loss = aux_loss
 
-        self.bbox_attention = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
-        self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)
-        self.insmask_head = nn.Sequential(
+        # self.bbox_attention = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
+        # self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)
+        # self.insmask_head = nn.Sequential(
+        #                         nn.Conv3d(24,12,3,padding=2,dilation=2),
+        #                         nn.GroupNorm(4,12),
+        #                         nn.ReLU(),
+        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
+        #                         nn.GroupNorm(4,12),
+        #                         nn.ReLU(),
+        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
+        #                         nn.GroupNorm(4,12),
+        #                         nn.ReLU(),
+        #                         nn.Conv3d(12,1,1))
+        
+        self.bbox_attention_layers = nn.ModuleList(MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0) \
+                                                   for _ in range(self.num_decoder_layers))
+        
+        self.mask_head_layers = nn.ModuleList(MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim) \
+                                                    for _ in range(self.num_decoder_layers))
+        
+        self.insmask_head_layers = nn.ModuleList(nn.Sequential(
                                 nn.Conv3d(24,12,3,padding=2,dilation=2),
                                 nn.GroupNorm(4,12),
                                 nn.ReLU(),
@@ -273,8 +291,7 @@ class VisTRWithEarlyExit(nn.Module):
                                 nn.Conv3d(12,12,3,padding=2,dilation=2),
                                 nn.GroupNorm(4,12),
                                 nn.ReLU(),
-                                nn.Conv3d(12,1,1))
-
+                                nn.Conv3d(12,1,1)) for _ in range(self.num_decoder_layers))
 
     def forward(self, samples: NestedTensor):
         """ The forward expects a NestedTensor, which consists of:
@@ -324,63 +341,86 @@ class VisTRWithEarlyExit(nn.Module):
 
         if self.enable_segm:
             other_hs, memory = self.transformer(src_proj, mask, self.query_embed.weight, pos)
-            
+            for i in range(3):
+                _,c_f,h,w = features[i].tensors.shape
+                features[i].tensors = features[i].tensors.reshape(bs_f, self.num_frames, c_f, h,w)
+                n_f = self.num_queries // self.num_frames
+
         res = []
 
         if self.early_exit_layer > 0:
-            for i in range(self.early_exit_layer):
-                other_hs[i] = other_hs[i].permute(2,0,1)
-                outputs_class = self.class_embeds[i](other_hs[i])
-                # print(f"the current output index is: {i}")
+            for layer in range(self.early_exit_layer):
+                other_hs[layer] = other_hs[layer].permute(2,0,1)
+                outputs_class = self.class_embeds[layer](other_hs[layer])
                 assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
-                outputs_coord = self.bbox_embeds[i](other_hs[i]).sigmoid()
+                outputs_coord = self.bbox_embeds[layer](other_hs[layer]).sigmoid()
                 assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
                 out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
                 if self.aux_loss:
-                    out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+                    out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)                    
+
+                if self.enable_segm:
+                    # image level processing using box attention 
+                    outputs_seg_masks = []
+                    for i in range(self.num_frames):
+                        hs_f = other_hs[layer][:,i*n_f:(i+1)*n_f,:]
+                        memory_f = memory[:,:,i,:].reshape(bs_f, c, s_h,s_w)
+                        mask_f = mask[:,i,:].reshape(bs_f, s_h,s_w)
+                        bbox_mask_f = self.bbox_attention_layers[layer](hs_f, memory_f, mask=mask_f)
+                        seg_masks_f = self.mask_head_layers[layer](memory_f, bbox_mask_f, [features[2].tensors[:,i], features[1].tensors[:,i], features[0].tensors[:,i]])
+                        outputs_seg_masks_f = seg_masks_f.view(bs_f, n_f, 24, seg_masks_f.shape[-2], seg_masks_f.shape[-1])
+                        outputs_seg_masks.append(outputs_seg_masks_f)
+                    frame_masks = torch.cat(outputs_seg_masks,dim=0)
+                    
+                    outputs_seg_masks = []
+
+                    # instance level processing using 3D convolution
+                    for i in range(frame_masks.size(1)):
+                        mask_ins = frame_masks[:,i].unsqueeze(0)
+                        mask_ins = mask_ins.permute(0,2,1,3,4)
+                        outputs_seg_masks.append(self.insmask_head_layers[layer](mask_ins))
+                    outputs_seg_masks = torch.cat(outputs_seg_masks,1).squeeze(0).permute(1,0,2,3)
+                    outputs_seg_masks = outputs_seg_masks.reshape(1,self.num_queries,outputs_seg_masks.size(-2),outputs_seg_masks.size(-1))
+                    out["pred_masks"] = outputs_seg_masks
+
                 res.append(out)
 
-        elif self.early_exit_layer == 0: # self.early_exit_layer == 0
-            # other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1).unsqueeze(0) # change order and keep the 4th dim
-            other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1) # change order and keep the 4th dim
-
+        elif self.early_exit_layer == 0: # self.early_exit_layer == 0            
+            # change order and keep the 4th dim
+            other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1) 
             outputs_class = self.class_embeds[self.early_exit_layer](other_hs[self.early_exit_layer])
-            # assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
             outputs_coord = self.bbox_embeds[self.early_exit_layer](other_hs[self.early_exit_layer]).sigmoid()
-            # assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
 
             out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
 
-
             if self.enable_segm:
-                for i in range(3):
-                    _,c_f,h,w = features[i].tensors.shape
-                    features[i].tensors = features[i].tensors.reshape(bs_f, self.num_frames, c_f, h,w)
-                n_f = self.num_queries // self.num_frames
-                outputs_seg_masks = []
+                # for i in range(3):
+                #     _,c_f,h,w = features[i].tensors.shape
+                #     features[i].tensors = features[i].tensors.reshape(bs_f, self.num_frames, c_f, h,w)
+                # n_f = self.num_queries // self.num_frames
                 
-                # image level processing using box attention (only works for the exit at layer 0 case for now)
-                # need to support when other_hs has multiple object by putting this in the loop below
+                # image level processing using box attention 
+                outputs_seg_masks = []
                 for i in range(self.num_frames):
                     # hs_f = other_hs[self.early_exit_layer][-1][:,i*n_f:(i+1)*n_f,:]
                     hs_f = other_hs[self.early_exit_layer][:,i*n_f:(i+1)*n_f,:]
-
                     memory_f = memory[:,:,i,:].reshape(bs_f, c, s_h,s_w)
                     mask_f = mask[:,i,:].reshape(bs_f, s_h,s_w)
-                    bbox_mask_f = self.bbox_attention(hs_f, memory_f, mask=mask_f)
-                    seg_masks_f = self.mask_head(memory_f, bbox_mask_f, [features[2].tensors[:,i], features[1].tensors[:,i], features[0].tensors[:,i]])
+                    bbox_mask_f = self.bbox_attention_layers[self.early_exit_layer](hs_f, memory_f, mask=mask_f)
+                    seg_masks_f = self.mask_head_layers[self.early_exit_layer](memory_f, bbox_mask_f, [features[2].tensors[:,i], features[1].tensors[:,i], features[0].tensors[:,i]])
                     outputs_seg_masks_f = seg_masks_f.view(bs_f, n_f, 24, seg_masks_f.shape[-2], seg_masks_f.shape[-1])
                     outputs_seg_masks.append(outputs_seg_masks_f)
                 frame_masks = torch.cat(outputs_seg_masks,dim=0)
+                
                 outputs_seg_masks = []
 
                 # instance level processing using 3D convolution
                 for i in range(frame_masks.size(1)):
                     mask_ins = frame_masks[:,i].unsqueeze(0)
                     mask_ins = mask_ins.permute(0,2,1,3,4)
-                    outputs_seg_masks.append(self.insmask_head(mask_ins))
+                    outputs_seg_masks.append(self.insmask_head_layers[self.early_exit_layer](mask_ins))
                 outputs_seg_masks = torch.cat(outputs_seg_masks,1).squeeze(0).permute(1,0,2,3)
                 outputs_seg_masks = outputs_seg_masks.reshape(1,self.num_queries,outputs_seg_masks.size(-2),outputs_seg_masks.size(-1))
                 out["pred_masks"] = outputs_seg_masks
@@ -689,7 +729,6 @@ def build_early_exit(args):
     # the segmentation is now at in the adaptive forward path
     # if args.masks:
     #     model = VisTRsegm(model)
-
 
     matcher = build_matcher(args)
     weight_dict = {'loss_ce': 1, 'loss_bbox': args.bbox_loss_coef}

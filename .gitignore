@@ -117,3 +117,5 @@ r101_vistr/*
 results/*
 
 res50_ee_*/
+inference_measurements*/
+ckpts/*

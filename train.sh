@@ -51,7 +51,7 @@ then
     --num_frames 3 \
     --num_queries 15 \
     --intermediate \
-    --output_dir small_dist \
+    --output_dir ckpts/small_dist \
     --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
     --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'small_masks_intermediate_debug' ] # add a simple case for pdb
@@ -106,7 +106,7 @@ then
         --num_queries 15 \
         --epochs 1 \
         --early_exit_layer $ee \
-        --output_dir res50_ee_"$ee"_1_batch_test \
+        --output_dir ckpts/res50_ee_"$ee"_1_batch_test \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'ffn_ee' ] # 
@@ -125,7 +125,7 @@ then
         --num_queries 15 \
         --epochs 1 \
         --early_exit_layer $ee \
-        --output_dir res50_ee_"$ee"_1_batch_test \
+        --output_dir ckpts/res50_ee_"$ee"_1_batch_test \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth 
                         # --output_dir test_print \
@@ -139,7 +139,7 @@ then
         --num_queries 15 \
         --epochs 1 \
         --early_exit_layer $ee \
-        --output_dir res50_test_segm \
+        --output_dir ckpts/res50_test_segm \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'segm_ee' ] 
@@ -152,7 +152,7 @@ then
         --num_queries 15 \
         --epochs 1 \
         --early_exit_layer $ee \
-        --output_dir res50_test_segm \
+        --output_dir ckpts/res50_test_segm_ee_"$ee" \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 else
