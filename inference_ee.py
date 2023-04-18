@@ -29,7 +29,6 @@ from scipy.optimize import linear_sum_assignment
 import pycocotools.mask as mask_util
 
 
-
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
     parser.add_argument('--lr', default=1e-4, type=float)
@@ -72,6 +71,8 @@ def get_args_parser():
     parser.add_argument('--num_queries', default=360, type=int,
                         help="Number of query slots")
     parser.add_argument('--pre_norm', action='store_true')
+    parser.add_argument('--intermediate', action='store_true',
+                        help="output intermediate decoder output")
 
     # * Segmentation
     parser.add_argument('--masks', action='store_true',
@@ -165,7 +166,11 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
     num_frames = args.num_frames
-    num_ins = args.num_ins
+
+    # num_ins = args.num_ins
+    # Yitao: instead of hardcoding the number of instances to 10
+    # I calculate that using num_queries // num_frames
+    num_ins = args.num_queries // args.num_frames
 
     model, criterion, postprocessors = build_model_early_exit(args)
     
@@ -224,38 +229,44 @@ def main(args):
             total_inference_time += time_per_video
             # end of model inference
             
-            #### comment out the following to only test the inference time
-            # logits, boxes, masks = outputs['pred_logits'].softmax(-1)[0,:,:-1], outputs['pred_boxes'][0], outputs['pred_masks'][0]
-            # pred_masks =F.interpolate(masks.reshape(num_frames,num_ins,masks.shape[-2],masks.shape[-1]),(im.size[1],im.size[0]),mode="bilinear").sigmoid().cpu().detach().numpy()>0.5
-            # pred_logits = logits.reshape(num_frames,num_ins,logits.shape[-1]).cpu().detach().numpy()
-            # pred_masks = pred_masks[:length] 
-            # pred_logits = pred_logits[:length]
-            # pred_scores = np.max(pred_logits,axis=-1)
-            # pred_logits = np.argmax(pred_logits,axis=-1)
-            # for m in range(num_ins):
-            #     if pred_masks[:,m].max()==0:
-            #         continue
-            #     score = pred_scores[:,m].mean()
-            #     #category_id = pred_logits[:,m][pred_scores[:,m].argmax()]
-            #     category_id = np.argmax(np.bincount(pred_logits[:,m]))
-            #     instance = {'video_id':id_, 'score':float(score), 'category_id':int(category_id)}
-            #     segmentation = []
-            #     for n in range(length):
-            #         if pred_scores[n,m]<0.001:
-            #             segmentation.append(None)
-            #         else:
-            #             mask = (pred_masks[n,m]).astype(np.uint8) 
-            #             rle = mask_util.encode(np.array(mask[:,:,np.newaxis], order='F'))[0]
-            #             rle["counts"] = rle["counts"].decode("utf-8")
-            #             segmentation.append(rle)
-            #     instance['segmentations'] = segmentation
-            #     result.append(instance)
+            logits, boxes, masks = outputs['pred_logits'].softmax(-1)[0,:,:-1], outputs['pred_boxes'][0], outputs['pred_masks'][0]
+            pred_masks =F.interpolate(masks.reshape(num_frames,num_ins,masks.shape[-2],masks.shape[-1]),(im.size[1],im.size[0]),mode="bilinear").sigmoid().cpu().detach().numpy()>0.5
+            pred_logits = logits.reshape(num_frames,num_ins,logits.shape[-1]).cpu().detach().numpy()
+            pred_masks = pred_masks[:length] 
+            pred_logits = pred_logits[:length]
+            pred_scores = np.max(pred_logits,axis=-1)
+            pred_logits = np.argmax(pred_logits,axis=-1)
+            for m in range(num_ins):
+                if pred_masks[:,m].max() == 0:
+                    continue
+                score = pred_scores[:,m].mean()
+                #category_id = pred_logits[:,m][pred_scores[:,m].argmax()]
+                category_id = np.argmax(np.bincount(pred_logits[:,m]))
+                instance = {'video_id':id_, 'score':float(score), 'category_id':int(category_id)}
+                segmentation = []
+
+                # Yitao: pred_scores has a shapre of [num_frames, num_ins]
+                # hence it is [36, 10] for the full model
+                # that's why this loop works
+                # for the reduced model, pred_scores is [3, 5], length is still 36 -> out of bound
+                # we use a simple hack to change the length to num_frames 
+                # for n in range(length):
+                for n in range(num_frames):
+                    if pred_scores[n,m] < 0.001:
+                        segmentation.append(None)
+                    else:
+                        mask = (pred_masks[n,m]).astype(np.uint8) 
+                        rle = mask_util.encode(np.array(mask[:,:,np.newaxis], order='F'))[0]
+                        rle["counts"] = rle["counts"].decode("utf-8")
+                        segmentation.append(rle)
+                instance['segmentations'] = segmentation
+                result.append(instance)
+    
     print(f'Inference time {total_inference_time}')
     # with open(args.save_path, 'w', encoding='utf-8') as f:
     #     json.dump(result,f)
 
-                    
-        
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('VisTR inference script', parents=[get_args_parser()])
     args = parser.parse_args()

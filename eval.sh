@@ -19,6 +19,28 @@ then
     --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
     --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
     --save_path results/results.json
+elif [ $1 == 'inference_small_masks' ]
+then
+    python inference.py \
+    --num_frames 3 \
+    --num_queries 15 \
+    --masks \
+    --backbone resnet50 \
+    --model_path ckpts/small_masks/checkpoint.pth \
+    --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
+    --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
+    --save_path results/results.json
+elif [ $1 == 'inference_small_masks_debug' ]
+then
+    python -m pdb inference.py \
+    --num_frames 3 \
+    --num_queries 15 \
+    --masks \
+    --backbone resnet50 \
+    --model_path ckpts/small_masks/checkpoint.pth \
+    --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
+    --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
+    --save_path results/results.json
 elif [ $1 == 'ee' ]
 then
     ee=2
@@ -63,6 +85,44 @@ then
         --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
         --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
         --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
+    done
+elif [ $1 == 'ee_masks_test' ]
+then
+    for i in 1
+    do
+    ee=2
+    echo "eval exit from $ee layer"
+    # taskset -p -c 0 $$ 
+    echo "start $i times"
+        python inference_ee.py \
+        --masks \
+        --num_frames 3 \
+        --num_queries 15 \
+        --early_exit_layer $ee \
+        --backbone resnet50 \
+        --model_path ckpts/res50_test_segm_ee_"$ee"/checkpoint.pth \
+        --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
+        --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
+        # --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
+    done
+elif [ $1 == 'ee_masks_test_debug' ]
+then
+    for i in 1
+    do
+    ee=2
+    echo "eval exit from $ee layer"
+    # taskset -p -c 0 $$ 
+    echo "start $i times"
+        python -m pdb inference_ee.py \
+        --masks \
+        --num_frames 3 \
+        --num_queries 15 \
+        --early_exit_layer $ee \
+        --backbone resnet50 \
+        --model_path ckpts/res50_test_segm_ee_"$ee"/checkpoint.pth \
+        --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
+        --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
+        # --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
     done
 elif [ $1 == 'ee_test_all' ]
 then

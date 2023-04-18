@@ -115,6 +115,8 @@ def get_args_parser():
     #parser.add_argument('--eval', action='store_true')
     parser.add_argument('--eval', action='store_false')
     parser.add_argument('--num_workers', default=0, type=int)
+    parser.add_argument('--intermediate', action='store_true',
+                        help="output intermediate decoder output")
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -161,7 +163,12 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
     num_frames = args.num_frames
-    num_ins = args.num_ins
+    
+    # num_ins = args.num_ins
+    # Yitao: instead of hardcoding the number of instances to 10
+    # I calculate that using num_queries // num_frames
+    num_ins = args.num_queries // args.num_frames
+    
     with torch.no_grad():
         model, criterion, postprocessors = build_model(args)
         model.to(device)
@@ -211,20 +218,27 @@ def main(args):
                 category_id = np.argmax(np.bincount(pred_logits[:,m]))
                 instance = {'video_id':id_, 'score':float(score), 'category_id':int(category_id)}
                 segmentation = []
-                for n in range(length):
-                    if pred_scores[n,m]<0.001:
+
+                # Yitao: pred_scores has a shapre of [num_frames, num_ins]
+                # hence it is [36, 10] for the full model
+                # that's why this loop works
+                # for the reduced model, pred_scores is [3, 5], length is still 36 -> out of bound
+                # we use a simple hack to change the length to num_frames 
+                # for n in range(length):
+                for n in range(num_frames):
+                    if pred_scores[n,m] < 0.001:
                         segmentation.append(None)
                     else:
                         mask = (pred_masks[n,m]).astype(np.uint8) 
                         rle = mask_util.encode(np.array(mask[:,:,np.newaxis], order='F'))[0]
                         rle["counts"] = rle["counts"].decode("utf-8")
                         segmentation.append(rle)
+                                
                 instance['segmentations'] = segmentation
                 result.append(instance)
     with open(args.save_path, 'w', encoding='utf-8') as f:
         json.dump(result,f)
                     
-        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('VisTR inference script', parents=[get_args_parser()])
     args = parser.parse_args()

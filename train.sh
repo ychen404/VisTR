@@ -23,6 +23,8 @@ then
     python main.py --backbone resnet50 \
     --num_frames 3 \
     --num_queries 15 \
+    --epochs 1 \
+    --output_dir ckpts/small_masks \
     --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019 \
     --intermediate \
     --masks --pretrained_weights pretrained_weights/384_coco_r50.pth
@@ -143,7 +145,7 @@ then
         --pretrained_weights pretrained_weights/384_coco_r50.pth
 elif [ $1 == 'segm_ee' ] 
 then
-    ee=0
+    ee=5
     echo "Early-exit from $ee layer"
     CUDA_VISIBLE_DEVICES=0 python main_ee.py --backbone resnet50 \
         --masks \
