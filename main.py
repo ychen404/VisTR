@@ -61,6 +61,9 @@ def get_args_parser():
                         help="Number of query slots")
     parser.add_argument('--pre_norm', action='store_true')
 
+    parser.add_argument('--intermediate', action='store_true',
+                        help="output intermediate decoder output")
+
     # * Segmentation
     parser.add_argument('--masks', action='store_true',
                         help="Train segmentation head if the flag is provided")

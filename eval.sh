@@ -62,7 +62,7 @@ then
         --model_path res50_ee_"$ee"_1_batch_test/checkpoint.pth \
         --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
         --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
-        --save_path results/ee_results.json >> inference_test_ee_"$ee"_1_batch.txt
+        --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
     done
 elif [ $1 == 'ee_test_all' ]
 then
@@ -82,7 +82,7 @@ then
                 --model_path res50_ee_"$ee"_1_batch_test/checkpoint.pth \
                 --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
                 --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
-                --save_path results/ee_results.json >> inference_test_ee_"$ee"_1_batch.txt
+                --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
             done
     done
 elif [ $1 == 'ee_test_all_cpu' ]

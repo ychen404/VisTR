@@ -53,7 +53,7 @@ class HungarianMatcher(nn.Module):
             
             
             
-            # VisTR recommend to perform 10 queries for each frame
+            # Yitao: VisTR recommend to perform 10 queries for each frame
             # This num_out seems to reflect that decision. But a hard-coded number will cause size mis match with a reduced transformer
             # So, instead of hardcoding the value, we use args.num_frames and args.num_queries to calculate the num_out
             # num_out = args.num_queries // args.num_frames

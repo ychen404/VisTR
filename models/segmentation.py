@@ -56,7 +56,6 @@ class BasicBlock(nn.Module):
         return out
 
 
-
 class VisTRsegm(nn.Module):
     def __init__(self, vistr, freeze_vistr=False):
         super().__init__()
@@ -84,6 +83,7 @@ class VisTRsegm(nn.Module):
         if not isinstance(samples, NestedTensor):
             samples = nested_tensor_from_tensor_list(samples)
         features, pos = self.vistr.backbone(samples)
+        
         bs = features[-1].tensors.shape[0]
         src, mask = features[-1].decompose()
         assert mask is not None
@@ -94,6 +94,12 @@ class VisTRsegm(nn.Module):
         mask = mask.reshape(bs_f, self.vistr.num_frames, s_h*s_w)
         pos = pos[-1].permute(0,2,1,3,4).flatten(-2)
         hs, memory = self.vistr.transformer(src_proj, mask, self.vistr.query_embed.weight, pos)
+        
+        # when intermediate output is not saved
+        if len(hs.shape) == 3:
+            hs = hs.permute(2,0,1)
+            hs = hs.unsqueeze(0) # change to 4d tensor
+
         outputs_class = self.vistr.class_embed(hs)
         outputs_coord = self.vistr.bbox_embed(hs).sigmoid()
         out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}

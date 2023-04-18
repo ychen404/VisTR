@@ -18,6 +18,11 @@ from .segmentation import (VisTRsegm, PostProcessSegm,
 from .transformer import build_transformer
 from .transformer import build_transformer_with_early_exit
 
+
+from typing import List, Optional
+from torch import Tensor
+from .dcn.deform_conv import DeformConv
+
 class VisTR(nn.Module):
     """ This is the VisTR module that performs video object detection """
     def __init__(self, backbone, transformer, num_classes, num_frames, num_queries, aux_loss=False):
@@ -65,6 +70,7 @@ class VisTR(nn.Module):
         features, pos = self.backbone(samples)
         pos = pos[-1]
         src, mask = features[-1].decompose()
+        
         src_proj = self.input_proj(src)
         n,c,h,w = src_proj.shape
         assert mask is not None
@@ -73,16 +79,15 @@ class VisTR(nn.Module):
         pos = pos.permute(0,2,1,3,4).flatten(-2)
         hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)[0]
 
-        # TODO: this does not support intermediate_output=False
         if len(hs.shape) == 4:
-            # intermediate_output=True
+            # the case of intermediate_output=True
             outputs_class = self.class_embed(hs)
             outputs_coord = self.bbox_embed(hs).sigmoid()
             out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
         else:
-            # intermediate_output=False
+            # the case of intermediate_output=False
             # hs has a shape of [15, 384, 1]
             # need to reshape to [1, 15, 384] for class_embed and bbox_embed
             hs = hs.permute(2,0,1)
@@ -102,9 +107,126 @@ class VisTR(nn.Module):
         return [{'pred_logits': a, 'pred_boxes': b}
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
     
+class MHAttentionMap(nn.Module):
+    """This is a 2D attention module, which only returns the attention softmax (no multiplication by value)"""
+
+    def __init__(self, query_dim, hidden_dim, num_heads, dropout=0.0, bias=True):
+        super().__init__()
+        self.num_heads = num_heads
+        self.hidden_dim = hidden_dim
+        self.dropout = nn.Dropout(dropout)
+
+        self.q_linear = nn.Linear(query_dim, hidden_dim, bias=bias)
+        self.k_linear = nn.Linear(query_dim, hidden_dim, bias=bias)
+
+        nn.init.zeros_(self.k_linear.bias)
+        nn.init.zeros_(self.q_linear.bias)
+        nn.init.xavier_uniform_(self.k_linear.weight)
+        nn.init.xavier_uniform_(self.q_linear.weight)
+        self.normalize_fact = float(hidden_dim / self.num_heads) ** -0.5
+
+    def forward(self, q, k, mask: Optional[Tensor] = None):
+        q = self.q_linear(q)
+        k = F.conv2d(k, self.k_linear.weight.unsqueeze(-1).unsqueeze(-1), self.k_linear.bias)
+        qh = q.view(q.shape[0], q.shape[1], self.num_heads, self.hidden_dim // self.num_heads)
+        kh = k.view(k.shape[0], self.num_heads, self.hidden_dim // self.num_heads, k.shape[-2], k.shape[-1])
+        weights = torch.einsum("bqnc,bnchw->bqnhw", qh * self.normalize_fact, kh)
+
+        if mask is not None:
+            weights.masked_fill_(mask.unsqueeze(1).unsqueeze(1), float("-inf"))
+        weights = F.softmax(weights.flatten(2), dim=-1).view_as(weights)
+        weights = self.dropout(weights)
+        return weights
+
+def _expand(tensor, length: int):
+    return tensor.unsqueeze(1).repeat(1, int(length), 1, 1, 1).flatten(0, 1)
+
+
+class MaskHeadSmallConv(nn.Module):
+    """
+    Simple convolutional head, using group norm.
+    Upsampling is done using a FPN approach
+    """
+
+    def __init__(self, dim, fpn_dims, context_dim):
+        super().__init__()
+
+        inter_dims = [dim, context_dim // 2, context_dim // 4, context_dim // 8, context_dim // 16, context_dim // 64]
+        self.lay1 = torch.nn.Conv2d(dim, dim, 3, padding=1)
+        self.gn1 = torch.nn.GroupNorm(8, dim)
+        self.lay2 = torch.nn.Conv2d(dim, inter_dims[1], 3, padding=1)
+        self.gn2 = torch.nn.GroupNorm(8, inter_dims[1])
+        self.lay3 = torch.nn.Conv2d(inter_dims[1], inter_dims[2], 3, padding=1)
+        self.gn3 = torch.nn.GroupNorm(8, inter_dims[2])
+        self.lay4 = torch.nn.Conv2d(inter_dims[2], inter_dims[3], 3, padding=1)
+        self.gn4 = torch.nn.GroupNorm(8, inter_dims[3])
+        self.gn5 = torch.nn.GroupNorm(8, inter_dims[4])
+        self.conv_offset = torch.nn.Conv2d(inter_dims[3], 18, 1)#, bias=False)
+        self.dcn = DeformConv(inter_dims[3],inter_dims[4], 3, padding=1)
+
+        self.dim = dim
+
+        self.adapter1 = torch.nn.Conv2d(fpn_dims[0], inter_dims[1], 1)
+        self.adapter2 = torch.nn.Conv2d(fpn_dims[1], inter_dims[2], 1)
+        self.adapter3 = torch.nn.Conv2d(fpn_dims[2], inter_dims[3], 1)
+
+        for name, m in self.named_modules():
+            if name == "conv_offset":
+                nn.init.constant_(m.weight, 0)
+                nn.init.constant_(m.bias, 0)
+            else:
+                if isinstance(m, nn.Conv2d):
+                    nn.init.kaiming_uniform_(m.weight, a=1)
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, x: Tensor, bbox_mask: Tensor, fpns: List[Tensor]):
+        x = torch.cat([_expand(x, bbox_mask.shape[1]), bbox_mask.flatten(0, 1)], 1)
+
+        x = self.lay1(x)
+        x = self.gn1(x)
+        x = F.relu(x)
+        x = self.lay2(x)
+        x = self.gn2(x)
+        x = F.relu(x)
+
+        cur_fpn = self.adapter1(fpns[0])
+        if cur_fpn.size(0) != x.size(0):
+            cur_fpn = _expand(cur_fpn, x.size(0) // cur_fpn.size(0))
+        x = cur_fpn + F.interpolate(x, size=cur_fpn.shape[-2:], mode="nearest")
+        x = self.lay3(x)
+        x = self.gn3(x)
+        x = F.relu(x)
+
+        cur_fpn = self.adapter2(fpns[1])
+        if cur_fpn.size(0) != x.size(0):
+            cur_fpn = _expand(cur_fpn, x.size(0) // cur_fpn.size(0))
+        x = cur_fpn + F.interpolate(x, size=cur_fpn.shape[-2:], mode="nearest")
+        x = self.lay4(x)
+        x = self.gn4(x)
+        x = F.relu(x)
+
+        cur_fpn = self.adapter3(fpns[2])
+        if cur_fpn.size(0) != x.size(0):
+            cur_fpn = _expand(cur_fpn, x.size(0) // cur_fpn.size(0))
+        x = cur_fpn + F.interpolate(x, size=cur_fpn.shape[-2:], mode="nearest")
+        # dcn for the last layer
+        offset = self.conv_offset(x)
+        x = self.dcn(x,offset)
+        x = self.gn5(x)
+        x = F.relu(x)
+        return x
+    
 class VisTRWithEarlyExit(nn.Module):
     """ This is the VisTR module that performs video object detection """
-    def __init__(self, backbone, transformer, early_exit_layer, num_classes, num_frames, num_queries, aux_loss=False):
+    def __init__(self, 
+                 backbone, 
+                 transformer, 
+                 early_exit_layer, 
+                 num_classes, 
+                 num_frames, 
+                 num_queries, 
+                 aux_loss=False, 
+                 enable_segm=False):
         """ Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -120,8 +242,12 @@ class VisTRWithEarlyExit(nn.Module):
         self.transformer = transformer
         self.early_exit_layer = early_exit_layer
         
+        self.enable_segm = enable_segm
+        
         self.num_decoder_layers = transformer.num_decoder_layers
         hidden_dim = transformer.d_model
+        nheads = transformer.nhead
+
         self.hidden_dim = hidden_dim
         
         ######### added for early exit #########
@@ -134,6 +260,21 @@ class VisTRWithEarlyExit(nn.Module):
         self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
         self.backbone = backbone
         self.aux_loss = aux_loss
+
+        self.bbox_attention = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
+        self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)
+        self.insmask_head = nn.Sequential(
+                                nn.Conv3d(24,12,3,padding=2,dilation=2),
+                                nn.GroupNorm(4,12),
+                                nn.ReLU(),
+                                nn.Conv3d(12,12,3,padding=2,dilation=2),
+                                nn.GroupNorm(4,12),
+                                nn.ReLU(),
+                                nn.Conv3d(12,12,3,padding=2,dilation=2),
+                                nn.GroupNorm(4,12),
+                                nn.ReLU(),
+                                nn.Conv3d(12,1,1))
+
 
     def forward(self, samples: NestedTensor):
         """ The forward expects a NestedTensor, which consists of:
@@ -154,11 +295,23 @@ class VisTRWithEarlyExit(nn.Module):
             samples = nested_tensor_from_tensor_list(samples)
         # moved the frame to batch dimension for computation efficiency
         features, pos = self.backbone(samples)
+
+        
+        bs = features[-1].tensors.shape[0] # for segmentation
+
         pos = pos[-1]
         src, mask = features[-1].decompose()
         src_proj = self.input_proj(src)
         n,c,h,w = src_proj.shape
+
+        # Trying to make sure enable_segm does not affect ffn
+        # the variable names are slightly different when enable_segm is on and off 
+        if self.enable_segm:
+            n,c,s_h,s_w = src_proj.shape
+            bs_f = bs // self.num_frames # for segmentation
+
         assert mask is not None
+                
         src_proj = src_proj.reshape(n//self.num_frames, self.num_frames, c, h, w).permute(0,2,1,3,4).flatten(-2)
         mask = mask.reshape(n//self.num_frames, self.num_frames, h*w)
         pos = pos.permute(0,2,1,3,4).flatten(-2)
@@ -167,9 +320,11 @@ class VisTRWithEarlyExit(nn.Module):
         ###### each object corresponds to a decoder layer output
         other_hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)[0]
         # hs, _, other_hs = self.transformer(src_proj, mask, self.query_embed.weight, pos)
-        
         ###### Calculate each decoder layer's output
-        
+
+        if self.enable_segm:
+            other_hs, memory = self.transformer(src_proj, mask, self.query_embed.weight, pos)
+            
         res = []
 
         if self.early_exit_layer > 0:
@@ -184,16 +339,52 @@ class VisTRWithEarlyExit(nn.Module):
                 if self.aux_loss:
                     out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
                 res.append(out)
+
         elif self.early_exit_layer == 0: # self.early_exit_layer == 0
-            other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1)
+            # other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1).unsqueeze(0) # change order and keep the 4th dim
+            other_hs[self.early_exit_layer] = other_hs[self.early_exit_layer].permute(2,0,1) # change order and keep the 4th dim
+
             outputs_class = self.class_embeds[self.early_exit_layer](other_hs[self.early_exit_layer])
-            assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
+            # assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
             outputs_coord = self.bbox_embeds[self.early_exit_layer](other_hs[self.early_exit_layer]).sigmoid()
-            assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
+            # assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
 
             out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+
+
+            if self.enable_segm:
+                for i in range(3):
+                    _,c_f,h,w = features[i].tensors.shape
+                    features[i].tensors = features[i].tensors.reshape(bs_f, self.num_frames, c_f, h,w)
+                n_f = self.num_queries // self.num_frames
+                outputs_seg_masks = []
+                
+                # image level processing using box attention (only works for the exit at layer 0 case for now)
+                # need to support when other_hs has multiple object by putting this in the loop below
+                for i in range(self.num_frames):
+                    # hs_f = other_hs[self.early_exit_layer][-1][:,i*n_f:(i+1)*n_f,:]
+                    hs_f = other_hs[self.early_exit_layer][:,i*n_f:(i+1)*n_f,:]
+
+                    memory_f = memory[:,:,i,:].reshape(bs_f, c, s_h,s_w)
+                    mask_f = mask[:,i,:].reshape(bs_f, s_h,s_w)
+                    bbox_mask_f = self.bbox_attention(hs_f, memory_f, mask=mask_f)
+                    seg_masks_f = self.mask_head(memory_f, bbox_mask_f, [features[2].tensors[:,i], features[1].tensors[:,i], features[0].tensors[:,i]])
+                    outputs_seg_masks_f = seg_masks_f.view(bs_f, n_f, 24, seg_masks_f.shape[-2], seg_masks_f.shape[-1])
+                    outputs_seg_masks.append(outputs_seg_masks_f)
+                frame_masks = torch.cat(outputs_seg_masks,dim=0)
+                outputs_seg_masks = []
+
+                # instance level processing using 3D convolution
+                for i in range(frame_masks.size(1)):
+                    mask_ins = frame_masks[:,i].unsqueeze(0)
+                    mask_ins = mask_ins.permute(0,2,1,3,4)
+                    outputs_seg_masks.append(self.insmask_head(mask_ins))
+                outputs_seg_masks = torch.cat(outputs_seg_masks,1).squeeze(0).permute(1,0,2,3)
+                outputs_seg_masks = outputs_seg_masks.reshape(1,self.num_queries,outputs_seg_masks.size(-2),outputs_seg_masks.size(-1))
+                out["pred_masks"] = outputs_seg_masks
+
             res.append(out)
         
         else:
@@ -492,13 +683,18 @@ def build_early_exit(args):
         num_frames=args.num_frames,
         num_queries=args.num_queries,
         aux_loss=args.aux_loss,
-
+        enable_segm=args.masks
     )
-    if args.masks:
-        model = VisTRsegm(model)
+
+    # the segmentation is now at in the adaptive forward path
+    # if args.masks:
+    #     model = VisTRsegm(model)
+
+
     matcher = build_matcher(args)
     weight_dict = {'loss_ce': 1, 'loss_bbox': args.bbox_loss_coef}
     weight_dict['loss_giou'] = args.giou_loss_coef
+    
     if args.masks:
         weight_dict["loss_mask"] = args.mask_loss_coef
         weight_dict["loss_dice"] = args.dice_loss_coef

@@ -197,18 +197,23 @@ def main(args):
                 clip_names = clip_names[:num_frames]
             else:
                 clip_names = file_names[:num_frames]
+
             if len(clip_names)==0:
                 continue
             if len(clip_names)<num_frames:
                 clip_names.extend(file_names[:num_frames-len(clip_names)])
+            
             for k in range(num_frames):
                 im = Image.open(os.path.join(folder,clip_names[k]))
                 if device.type == 'cuda':
-                    # print("using cuda")
-                    img_set.append(transform(im).unsqueeze(0).cuda())
+                    # transform here resizes the image using a similar 
+                    # aspect ratio 533 x 300
+                    # unsqueeze(0) add the additional dim to form a 4d tensor [1,3,300,533]
+                    img_set.append(transform(im).unsqueeze(0).cuda()) 
                 else:
                     img_set.append(transform(im).unsqueeze(0))
-            img=torch.cat(img_set,0)
+            img=torch.cat(img_set,0) # shape [3,3,300,533]
+
             # inference time is calculated for this operation
             # outputs = model(img)
             start_time = time.time()
