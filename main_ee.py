@@ -109,6 +109,9 @@ def get_args_parser():
 
     parser.add_argument('--early_exit_layer', default=5, type=int,
                         help="early exit layer (0 to 5)")
+    parser.add_argument('--early_break', action='store_true',help="break after a batch for testing")
+
+    
     return parser
 
 
@@ -196,7 +199,7 @@ def main(args):
         if args.distributed:
             sampler_train.set_epoch(epoch)
         train_stats = train_one_epoch_with_early_exit(
-            model, criterion, data_loader_train, optimizer, device, epoch,
+            model, criterion, data_loader_train, optimizer, device, epoch, args.early_break,
             args.clip_max_norm)
         lr_scheduler.step()
         if args.output_dir:

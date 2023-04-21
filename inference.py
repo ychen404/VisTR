@@ -224,6 +224,7 @@ def main(args):
                 # that's why this loop works
                 # for the reduced model, pred_scores is [3, 5], length is still 36 -> out of bound
                 # we use a simple hack to change the length to num_frames 
+                # use length for non-reduced model
                 # for n in range(length):
                 for n in range(num_frames):
                     if pred_scores[n,m] < 0.001:

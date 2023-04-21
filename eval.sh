@@ -26,7 +26,7 @@ then
     --num_queries 15 \
     --masks \
     --backbone resnet50 \
-    --model_path ckpts/small_masks/checkpoint.pth \
+    --model_path ckpts/small_model_checkpoint_fullytrained/checkpoint.pth \
     --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
     --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
     --save_path results/results.json
@@ -139,7 +139,29 @@ then
                 --num_queries 15 \
                 --early_exit_layer $ee \
                 --backbone resnet50 \
-                --model_path res50_ee_"$ee"_1_batch_test/checkpoint.pth \
+                --model_path ckpts/res50_ee_"$ee"_1_batch_test/checkpoint.pth \
+                --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
+                --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
+                --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
+            done
+    done
+elif [ $1 == 'ee_masks_test_all' ]
+then
+    for i in 1 2 3
+    do
+        for j in {0..5}
+            do 
+            ee=$j
+            echo "eval exit from $ee layer, single GPU"
+            # taskset -p -c 0 $$ 
+            echo "start $i times"
+                CUDA_VISIBLE_DEVICES=0 python inference_ee.py \
+                --num_frames 3 \
+                --num_queries 15 \
+                --masks \
+                --early_exit_layer $ee \
+                --backbone resnet50 \
+                --model_path ckpts/res50_test_segm_ee_"$ee"/checkpoint.pth \
                 --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
                 --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
                 --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
@@ -161,7 +183,7 @@ then
                 --num_queries 15 \
                 --early_exit_layer $ee \
                 --backbone resnet50 \
-                --model_path res50_ee_"$ee"_1_batch_test/checkpoint.pth \
+                --model_path ckpts/res50_ee_"$ee"_1_batch_test/checkpoint.pth \
                 --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
                 --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
                 --save_path results/ee_results.json >> inference_test_ee_"$ee"_1_batch.txt
@@ -173,7 +195,7 @@ then
         --num_frames 3 \
         --num_queries 15 \
         --backbone resnet50 \
-        --model_path res50_ee_all_layers_1_batch/checkpoint.pth \
+        --model_path ckpts/res50_ee_all_layers_1_batch/checkpoint.pth \
         --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
         --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
         --save_path results/ee_results.json

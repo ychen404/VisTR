@@ -66,7 +66,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0):
+                    device: torch.device, epoch: int, early_break, max_norm: float = 0):
     model.train()
     criterion.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -119,7 +119,8 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         ############## make a simple model to test inference
-        break
+        if early_break: 
+            break
         ##############
 
     # gather the stats from all processes
