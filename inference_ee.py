@@ -263,8 +263,8 @@ def main(args):
                 result.append(instance)
     
     print(f'Inference time {total_inference_time}')
-    # with open(args.save_path, 'w', encoding='utf-8') as f:
-    #     json.dump(result,f)
+    with open(args.save_path, 'w', encoding='utf-8') as f:
+        json.dump(result,f)
 
 
 if __name__ == '__main__':

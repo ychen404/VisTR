@@ -19,6 +19,8 @@ from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch, train_one_epoch_with_early_exit
 from models import build_model, build_model_early_exit
 import pdb
+from torch.utils.tensorboard import SummaryWriter
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
@@ -110,15 +112,16 @@ def get_args_parser():
     parser.add_argument('--early_exit_layer', default=5, type=int,
                         help="early exit layer (0 to 5)")
     parser.add_argument('--early_break', action='store_true',help="break after a batch for testing")
+    parser.add_argument("--workspace", default="", type=str, help="comment for tensorboard")
+    parser.add_argument("--log", default="logs/log.json", type=str, help="path of the log file")
 
-    
+
     return parser
 
 
 def main(args):
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
-
 
     device = torch.device(args.device)
 
@@ -134,8 +137,11 @@ def main(args):
     model.to(device)
 
     model_without_ddp = model
+    # Yitao: find_unused_parameters=True is required to address "RuntimeError: Expected to have finished reduction 
+    # in the prior iteration before starting a new one"
+    # All the 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
@@ -165,6 +171,7 @@ def main(args):
                                    collate_fn=utils.collate_fn, num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
+    writer = SummaryWriter(comment=args.workspace)
     
     # load coco pretrained weight
     checkpoint = torch.load(args.pretrained_weights, map_location='cpu')['model']
@@ -199,8 +206,12 @@ def main(args):
         if args.distributed:
             sampler_train.set_epoch(epoch)
         train_stats = train_one_epoch_with_early_exit(
-            model, criterion, data_loader_train, optimizer, device, epoch, args.early_break,
+            model, criterion, data_loader_train, optimizer, device, epoch, args.early_break, args.log,
             args.clip_max_norm)
+
+        for k, v in train_stats.items():
+            writer.add_scalar(k + "/train", v, epoch)
+
         lr_scheduler.step()
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']

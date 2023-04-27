@@ -180,7 +180,8 @@ def main(args):
         print(f"Number of videos: {vis_num}")
         result = [] 
         for i in range(vis_num):
-            print("Process video: ",i)
+            if i % 50 == 0:
+                print("Process video: ",i)
             id_ = videos[i]['id']
             length = videos[i]['length']
             file_names = videos[i]['file_names']
