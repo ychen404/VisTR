@@ -455,7 +455,7 @@ def build_transformer_with_early_exit(args):
         early_exit_layer=args.early_exit_layer,
         normalize_before=args.pre_norm,
         # return_intermediate_dec=True,
-        return_intermediate_dec=False, # do need intermediate output
+        return_intermediate_dec=False, # do not need intermediate output
     )
 
 def _get_activation_fn(activation):

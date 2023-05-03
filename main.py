@@ -109,11 +109,11 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--local_rank', type=int, help='')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-    
-    
+        
     parser.add_argument('--early_break', action='store_true',help="break after a batch for testing")
     parser.add_argument("--workspace", default="", type=str, help="comment for tensorboard")
     parser.add_argument("--log", default="logs/log.json", type=str, help="path of the log file")
+    parser.add_argument('--debug', action='store_true',help="disable tensorboard for debug")
 
     return parser
 
@@ -166,7 +166,12 @@ def main(args):
 
     output_dir = Path(args.output_dir)
     
-    writer = SummaryWriter(comment=args.workspace)
+
+    if args.debug:
+        writer = utils.DummySummaryWriter()
+    else:
+        writer = SummaryWriter(comment=args.workspace)
+    
     # load coco pretrained weight
     checkpoint = torch.load(args.pretrained_weights, map_location='cpu')['model']
     del checkpoint["vistr.class_embed.weight"]
@@ -179,6 +184,7 @@ def main(args):
     else:
         # single mode
         model.load_state_dict(checkpoint,strict=False)
+    
 
     if args.resume:
         if args.resume.startswith('https'):

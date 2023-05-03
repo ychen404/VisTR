@@ -12,7 +12,7 @@ import json
 import random
 import copy
 
-dataset_path = "/home/users/yitao/Code/IFC/datasets/ytvis_2019_small/"
+dataset_path = "/home/users/yitao/Code/IFC/datasets/ytvis_2019_tiny/"
 file = open(dataset_path + 'annotations/instances_train_sub_full.json')
 data = json.load(file)
 # print(len(data['videos']))
@@ -25,11 +25,13 @@ for item in data['videos']:
     name = item['file_names'][0].split('/')[0]
     foldernames.append(name)
 
-
 print(f"total entries: {len(foldernames)}")
-# print(len(foldernames))
+print(len(foldernames))
 
-out = random.sample(foldernames, 200)
+size = 10
+# out = random.sample(foldernames, 200)
+out = random.sample(foldernames, size)
+
 # test_out = [out[0]]
 
 neg = 0
@@ -48,7 +50,7 @@ for idx, item in enumerate(data['videos']):
 print(f"total neg {neg}, pos {pos}")
 # breakpoint()
 
-assert len(res['videos']) == 200, "the length is wrong"
+assert len(res['videos']) == size, "the length is wrong"
 
 with open('instances_train_sub.json', 'w', encoding='utf-8') as f:
     json.dump(res,f)

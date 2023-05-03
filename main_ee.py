@@ -114,6 +114,8 @@ def get_args_parser():
     parser.add_argument('--early_break', action='store_true',help="break after a batch for testing")
     parser.add_argument("--workspace", default="", type=str, help="comment for tensorboard")
     parser.add_argument("--log", default="logs/log.json", type=str, help="path of the log file")
+    parser.add_argument('--debug', action='store_true',help="disable tensorboard for debug")
+
 
 
     return parser
@@ -141,7 +143,8 @@ def main(args):
     # in the prior iteration before starting a new one"
     # All the 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)

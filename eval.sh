@@ -26,10 +26,10 @@ then
     --num_queries 15 \
     --masks \
     --backbone resnet50 \
-    --model_path ckpts/small_dist_smallds_baseline/checkpoint.pth \
+    --model_path ckpts/small_masks_tiny/checkpoint.pth \
     --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
     --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
-    --save_path results/results_smallds.json
+    --save_path results/results_tinyds_baseline.json
     # --model_path ckpts/small_model_checkpoint_fullytrained/checkpoint.pth \
 elif [ $1 == 'inference_small_masks_debug' ]
 then
@@ -91,7 +91,7 @@ elif [ $1 == 'ee_masks_test' ]
 then
     for i in 1
     do
-    ee=3
+    ee=4
     echo "eval exit from $ee layer"
     # taskset -p -c 0 $$ 
     echo "start $i times"
@@ -101,10 +101,11 @@ then
         --num_queries 15 \
         --early_exit_layer $ee \
         --backbone resnet50 \
-        --model_path ckpts/res50_test_segm_ee_"$ee"_fullytrained_dist/checkpoint.pth \
+        --model_path ckpts/res50_segm_ee_5_tinyds_from_scratch/checkpoint.pth \
         --img_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/val/JPEGImages/ \
         --ann_path /home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json \
-        --save_path results/ee_"$ee"_results.json
+        --save_path results/ee_"$ee"_tinyds_results_from_scratch.json
+        # --save_path results/ee_"$ee"_tinyds_results.json
         # --save_path results/ee_results.json >> inference_test_ee_"$ee".txt
         # --model_path ckpts/res50_test_segm_ee_"$ee"/checkpoint.pth \
 

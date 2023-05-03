@@ -69,7 +69,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     
 
-
 def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, early_break, log, max_norm: float = 0):
@@ -89,7 +88,25 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
         #### so we should expect the 'outputs' contains the output from each decoder layer
 
         # loss_dict = criterion(outputs, targets)
+        # weight_dict = criterion.weight_dict
+        
+        # #### TODO: here we may be able to sum up all the output losses from each decoder layer
+        # losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
 
+        # # reduce losses over all GPUs for logging purposes
+        # loss_dict_reduced = utils.reduce_dict(loss_dict)
+        # loss_dict_reduced_unscaled = {f'{k}_unscaled': v
+        #                             for k, v in loss_dict_reduced.items()}
+        # loss_dict_reduced_scaled = {k: v * weight_dict[k]
+        #                             for k, v in loss_dict_reduced.items() if k in weight_dict}
+        # losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
+
+        # loss_value = losses_reduced_scaled.item()
+
+        # if not math.isfinite(loss_value):
+        #     print("Loss is {}, stopping training".format(loss_value))
+        #     print(loss_dict_reduced)
+        #     sys.exit(1)
         total_loss = 0
         for output_item in outputs:
             loss_dict = criterion(output_item, targets)
@@ -113,8 +130,10 @@ def train_one_epoch_with_early_exit(model: torch.nn.Module, criterion: torch.nn.
                 print(loss_dict_reduced)
                 sys.exit(1)
             total_loss += losses
+        
         optimizer.zero_grad()
         # losses.backward()
+        
         total_loss.backward()
         if max_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
