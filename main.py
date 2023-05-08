@@ -131,7 +131,7 @@ def main(args):
     random.seed(seed)
 
     model, criterion, postprocessors = build_model(args)
-    model.to(device)
+    model.to(device)      
 
     model_without_ddp = model
     if args.distributed:

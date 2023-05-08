@@ -405,7 +405,6 @@ class VisTRWithEarlyExit(nn.Module):
         self.num_queries = num_queries
         self.transformer = transformer
         hidden_dim = transformer.d_model
-        nheads = transformer.nhead
         self.hidden_dim = hidden_dim
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         self.num_frames = num_frames

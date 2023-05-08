@@ -224,7 +224,10 @@ def main(args):
             start_time = time.time()
             img.to(device)
 
-            outputs = model(img)[0] # the first output is what we need
+            # Yitao:outputs contains results till the early exit layer
+            # We use the bottom one for prediction
+            outputs = model(img)[-1] 
+
             time_per_video = time.time() - start_time
             total_inference_time += time_per_video
             # end of model inference

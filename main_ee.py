@@ -143,8 +143,8 @@ def main(args):
     # in the prior iteration before starting a new one"
     # All the 
     if args.distributed:
-        # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
@@ -211,9 +211,11 @@ def main(args):
         train_stats = train_one_epoch_with_early_exit(
             model, criterion, data_loader_train, optimizer, device, epoch, args.early_break, args.log,
             args.clip_max_norm)
-
-        for k, v in train_stats.items():
-            writer.add_scalar(k + "/train", v, epoch)
+        
+        # add to tensorboard only for the main process
+        if utils.is_main_process():
+            for k, v in train_stats.items():
+                writer.add_scalar(k + "/train", v, epoch)
 
         lr_scheduler.step()
         if args.output_dir:
