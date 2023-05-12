@@ -9,7 +9,7 @@ pylab.rcParams['figure.figsize'] = (10.0, 8.0)
 
 # %%
 
-res_path = '/home/users/yitao/Code/VisTR/results/tinyds_baseline_from_model_pretrained_on_smallds.json'
+res_path = '/home/users/yitao/Code/VisTR/results/data/results.json'
 f = open(res_path, 'r')
 data = json.load(f)
 
@@ -28,7 +28,7 @@ print (f'Running demo for *%s* results.'%(annType))
 # annFile = '%s/annotations/%s_%s.json'%(dataDir,prefix,dataType)
 annFile = '/home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_val_sub.json'
 # cocoGt=YTVOS(annFile)
-train_annFile = '/home/users/yitao/Code/IFC/datasets/ytvis_2019/annotations/instances_train_sub.json'
+train_annFile = '/home/users/yitao/Code/VisTR/TrackEval_data/data/gt/youtube_vis/youtube_vis_train_sub_split/train_sub_split.json'
 cocoGt=YTVOS(train_annFile)
 
 # %%

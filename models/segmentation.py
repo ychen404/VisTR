@@ -146,19 +146,6 @@ class VisTRsegmWithEarlyExit(nn.Module):
                 p.requires_grad_(False)
 
         hidden_dim, nheads = vistr.transformer.d_model, vistr.transformer.nhead
-        # self.bbox_attention = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
-        # self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)
-        # self.insmask_head = nn.Sequential(
-        #                         nn.Conv3d(24,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,1,1))
 
         # merge all the layers
         self.bbox_attention_layers = nn.ModuleList(MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0) \
@@ -179,29 +166,6 @@ class VisTRsegmWithEarlyExit(nn.Module):
                                 nn.ReLU(),
                                 nn.Conv3d(12,1,1)) for _ in range(self.vistr.num_decoder_layers))
 
-
-        # add segm compoents for other layers except the last one
-        # self.bbox_attention_layers = nn.ModuleList(MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0) \
-        #                                            for _ in range(self.vistr.num_decoder_layers - 1))
-        
-        # self.mask_head_layers = nn.ModuleList(MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim) \
-        #                                             for _ in range(self.vistr.num_decoder_layers- 1))
-        
-        # self.insmask_head_layers = nn.ModuleList(nn.Sequential(
-        #                         nn.Conv3d(24,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,12,3,padding=2,dilation=2),
-        #                         nn.GroupNorm(4,12),
-        #                         nn.ReLU(),
-        #                         nn.Conv3d(12,1,1)) for _ in range(self.vistr.num_decoder_layers - 1))
-        
-        
-
-
         #========================== single segm branch ==========================
         # self.bbox_attention_added = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
         # self.mask_head_added = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)        
@@ -217,7 +181,6 @@ class VisTRsegmWithEarlyExit(nn.Module):
         #                         nn.ReLU(),
         #                         nn.Conv3d(12,1,1))
         #========================== single segm branch ==========================
-
 
     def forward(self, samples: NestedTensor):
         if not isinstance(samples, NestedTensor):
@@ -248,57 +211,13 @@ class VisTRsegmWithEarlyExit(nn.Module):
             hs = hs.permute(2,0,1)
             hs = hs.unsqueeze(0) # change to 4d tensor
 
-
-        # here pass all the hs [6,1,15,384] through the class_embed form a [6,1,15,42]
-        # Wasted some calculation here, but easier to stick with the original flow
-        # outputs_class = self.vistr.class_embeds[-1](hs)
-        # outputs_coord = self.vistr.bbox_embeds[-1](hs).sigmoid()
-        
-        # out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
-        # if self.vistr.aux_loss:
-        #     out['aux_outputs'] = self.vistr._set_aux_loss(outputs_class, outputs_coord)
-        # for i in range(3):
-        #     _,c_f,h,w = features[i].tensors.shape
-        #     features[i].tensors = features[i].tensors.reshape(bs_f, self.vistr.num_frames, c_f, h,w)
-        # n_f = self.vistr.num_queries//self.vistr.num_frames
-        # outputs_seg_masks = []
-        
-        # image level processing using box attention
-        # for i in range(self.vistr.num_frames):
-        #     hs_f = hs[-1][:,i*n_f:(i+1)*n_f,:]
-        #     memory_f = memory[:,:,i,:].reshape(bs_f, c, s_h,s_w)
-        #     mask_f = mask[:,i,:].reshape(bs_f, s_h,s_w)
-        #     bbox_mask_f = self.bbox_attention(hs_f, memory_f, mask=mask_f)
-        #     seg_masks_f = self.mask_head(memory_f, bbox_mask_f, [features[2].tensors[:,i], features[1].tensors[:,i], features[0].tensors[:,i]])
-        #     outputs_seg_masks_f = seg_masks_f.view(bs_f, n_f, 24, seg_masks_f.shape[-2], seg_masks_f.shape[-1])
-        #     outputs_seg_masks.append(outputs_seg_masks_f)
-        # frame_masks = torch.cat(outputs_seg_masks,dim=0)
-        # outputs_seg_masks = []
-
-        # instance level processing using 3D convolution
-        # for i in range(frame_masks.size(1)):
-        #     mask_ins = frame_masks[:,i].unsqueeze(0)
-        #     mask_ins = mask_ins.permute(0,2,1,3,4)
-        #     outputs_seg_masks.append(self.insmask_head(mask_ins))
-        # outputs_seg_masks = torch.cat(outputs_seg_masks,1).squeeze(0).permute(1,0,2,3)
-        # outputs_seg_masks = outputs_seg_masks.reshape(1,self.vistr.num_queries,outputs_seg_masks.size(-2),outputs_seg_masks.size(-1))
-        # out["pred_masks"] = outputs_seg_masks
-
-        # move the out to res for early exit
-        # return out
-
-        # res.append(out)
-
         for i in range(3):
             _,c_f,h,w = features[i].tensors.shape
             features[i].tensors = features[i].tensors.reshape(bs_f, self.vistr.num_frames, c_f, h,w)
         n_f = self.vistr.num_queries//self.vistr.num_frames
 
-        # other layers
-        # assert self.early_exit_layer > 0, "early_exit_layer not correct"
-
         if self.training:
-            for layer in range(self.vistr.num_decoder_layers - 1): # the last layer is already calculated
+            for layer in range(self.vistr.num_decoder_layers): 
             # for layer in range(self.vistr.num_decoder_layers): # calculate all the layers
                 # hs[layer] = hs[layer].permute(2,0,1)
                 outputs_class = self.vistr.class_embeds[layer](hs[layer])

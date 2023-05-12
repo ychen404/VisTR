@@ -14,6 +14,7 @@ from typing import Optional, List
 import torch
 import torch.distributed as dist
 from torch import Tensor
+from datetime import datetime
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision
@@ -431,6 +432,9 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
         return _new_empty_tensor(input, output_shape)
     else:
         return torchvision.ops.misc.interpolate(input, size, scale_factor, mode, align_corners)
+
+def get_timestamp():
+    return datetime.now().strftime("%d%m%Y%H%M%S")
 
 class DummySummaryWriter:
     def __init__(*args, **kwargs):

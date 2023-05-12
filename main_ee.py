@@ -20,6 +20,7 @@ from engine import evaluate, train_one_epoch, train_one_epoch_with_early_exit
 from models import build_model, build_model_early_exit
 import pdb
 from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 
 def get_args_parser():
@@ -173,8 +174,9 @@ def main(args):
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
                                    collate_fn=utils.collate_fn, num_workers=args.num_workers)
 
+    from datetime import datetime
     output_dir = Path(args.output_dir)
-    writer = SummaryWriter(comment=args.workspace)
+    writer = SummaryWriter(comment=(args.workspace))
     
     # load coco pretrained weight
     checkpoint = torch.load(args.pretrained_weights, map_location='cpu')['model']
