@@ -14,7 +14,6 @@ from typing import Optional, List
 import torch
 import torch.distributed as dist
 from torch import Tensor
-from datetime import datetime
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision

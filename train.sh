@@ -41,10 +41,10 @@ then
         --num_frames 3 \
         --num_queries 15 \
         --early_exit_layer $ee \
-        --output_dir ckpts/segm_ee_smallds_05072023 \
+        --output_dir ckpts/segm_ee_smallds_05122023 \
         --log logs/segm_ee_smallds.json \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019_small \
-        --workspace segm_ee_smallds \
+        --workspace segm_ee_smallds_05122023 \
         --pretrained_weights ckpts/small_model_checkpoint_fullytrained/checkpoint.pth
 elif [ $1 == 'segm_ee_smallds_dist' ] # small dataset with ee
 then
@@ -56,10 +56,10 @@ then
         --num_frames 3 \
         --num_queries 15 \
         --early_exit_layer $ee \
-        --output_dir ckpts/segm_ee_smallds_dist_05072023_again \
-        --log logs/segm_ee_smallds_dist.json \
+        --output_dir ckpts/segm_ee_smallds_dist_05122023 \
+        --log logs/segm_ee_smallds_dist_05122023.json \
         --ytvos_path /home/users/yitao/Code/IFC/datasets/ytvis_2019_small \
-        --workspace segm_ee_smallds_dist_05072023_again \
+        --workspace segm_ee_smallds_dist_05122023 \
         --pretrained_weights ckpts/small_model_checkpoint_fullytrained/checkpoint.pth
 elif [ $1 == 'segm_ee_tinyds' ] # small dataset
 then
