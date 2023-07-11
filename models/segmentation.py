@@ -221,9 +221,9 @@ class VisTRsegmWithEarlyExit(nn.Module):
             # for layer in range(self.vistr.num_decoder_layers): # calculate all the layers
                 # hs[layer] = hs[layer].permute(2,0,1)
                 outputs_class = self.vistr.class_embeds[layer](hs[layer])
-                assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
+                # assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
                 outputs_coord = self.vistr.bbox_embeds[layer](hs[layer]).sigmoid()
-                assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
+                # assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
                 out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
                 if self.vistr.aux_loss:
                     out['aux_outputs'] = self.vistr._set_aux_loss(outputs_class, outputs_coord)                    
@@ -259,9 +259,9 @@ class VisTRsegmWithEarlyExit(nn.Module):
         else:
             for layer in range(self.vistr.num_decoder_layers): # inference through all the layers
                 outputs_class = self.vistr.class_embeds[layer](hs[layer])
-                assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
+                # assert outputs_class.shape == torch.Size([1, 15, 42]), f"outputs_class with wrong shape {outputs_class.shape}"
                 outputs_coord = self.vistr.bbox_embeds[layer](hs[layer]).sigmoid()
-                assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
+                # assert outputs_coord.shape == torch.Size([1, 15, 4]), f"outputs_coord with wrong shape {outputs_coord.shape}"
                 out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
                 if self.vistr.aux_loss:
                     out['aux_outputs'] = self.vistr._set_aux_loss(outputs_class, outputs_coord)                    

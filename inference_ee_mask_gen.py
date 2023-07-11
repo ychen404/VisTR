@@ -17,7 +17,7 @@ import datasets
 import util.misc as utils
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
-from models import build_model
+from models import build_model, build_model_early_exit
 import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import os
@@ -29,6 +29,11 @@ from scipy.optimize import linear_sum_assignment
 import pycocotools.mask as mask_util
 
 
+"""
+
+Use this file to generate masks for ploting
+
+"""
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
@@ -72,6 +77,8 @@ def get_args_parser():
     parser.add_argument('--num_queries', default=360, type=int,
                         help="Number of query slots")
     parser.add_argument('--pre_norm', action='store_true')
+    parser.add_argument('--intermediate', action='store_true',
+                        help="output intermediate decoder output")
 
     # * Segmentation
     parser.add_argument('--masks', action='store_true',
@@ -115,13 +122,15 @@ def get_args_parser():
     #parser.add_argument('--eval', action='store_true')
     parser.add_argument('--eval', action='store_false')
     parser.add_argument('--num_workers', default=0, type=int)
-    parser.add_argument('--intermediate', action='store_true',
-                        help="output intermediate decoder output")
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+    
+    parser.add_argument('--early_exit_layer', default=5, type=int,
+                        help="early exit layer (0 to 5)")
+
     return parser
 
 CLASSES=['person','giant_panda','lizard','parrot','skateboard','sedan','ape',
@@ -154,88 +163,107 @@ def rescale_bboxes(out_bbox, size):
     return b
 
 def main(args):
-
+    
+    import numpy as np
+    
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
-    import numpy as np
     np.random.seed(seed)
     random.seed(seed)
     num_frames = args.num_frames
-    
+
     # num_ins = args.num_ins
     # Yitao: instead of hardcoding the number of instances to 10
     # I calculate that using num_queries // num_frames
     num_ins = args.num_queries // args.num_frames
+
+    model, criterion, postprocessors = build_model_early_exit(args)
     
+    # we need this to go for the early exit route
+    model.eval()
+
+    frame1 = "/home/users/yitao/Code/IFC/datasets/ytvis_2019_tiny/val/JPEGImages/00f88c4f0a/00025.jpg"
+    frame2 = "/home/users/yitao/Code/IFC/datasets/ytvis_2019_tiny/val/JPEGImages/00f88c4f0a/00030.jpg"
+    frame3 = "/home/users/yitao/Code/IFC/datasets/ytvis_2019_tiny/val/JPEGImages/00f88c4f0a/00035.jpg"
+    clip_names = [frame1, frame2, frame3]    
+
     with torch.no_grad():
-        model, criterion, postprocessors = build_model(args)
+        # model, criterion, postprocessors = build_model_early_exit(args)
         model.to(device)
         state_dict = torch.load(args.model_path)['model']
         model.load_state_dict(state_dict)
+    
         folder = args.img_path
         videos = json.load(open(args.ann_path,'rb'))['videos']
         vis_num = len(videos)
         print(f"Number of videos: {vis_num}")
-        result = [] 
+        result = []
+        total_inference_time = 0
+
+        vis_num = 1
         for i in range(vis_num):
-            if i % 50 == 0:
+            if i % 100 == 0:
                 print("Process video: ",i)
             id_ = videos[i]['id']
             length = videos[i]['length']
-            file_names = videos[i]['file_names']
-            clip_num = math.ceil(length/num_frames)
             
             img_set=[]
-            if length<num_frames:
-                clip_names = file_names*(math.ceil(num_frames/length))
-                clip_names = clip_names[:num_frames]
-            else:
-                clip_names = file_names[:num_frames]
-            if len(clip_names)==0:
-                continue
-            if len(clip_names)<num_frames:
-                clip_names.extend(file_names[:num_frames-len(clip_names)])
+            num_frames = 3
             for k in range(num_frames):
-                im = Image.open(os.path.join(folder,clip_names[k]))
-                img_set.append(transform(im).unsqueeze(0).cuda())
-            img=torch.cat(img_set,0)
-            # inference time is calculated for this operation
-            outputs = model(img)
-            # end of model inference
-            logits, boxes, masks = outputs['pred_logits'].softmax(-1)[0,:,:-1], outputs['pred_boxes'][0], outputs['pred_masks'][0]
+                im = Image.open(clip_names[k])
+                if device.type == 'cuda':
+                    # transform here resizes the image using a similar 
+                    # aspect ratio 533 x 300
+                    # unsqueeze(0) add the additional dim to form a 4d tensor [1,3,300,533]
+                    img_set.append(transform(im).unsqueeze(0).cuda()) 
+                else:
+                    img_set.append(transform(im).unsqueeze(0))
 
+
+            img=torch.cat(img_set,0) # shape [3,3,300,533]
+
+            # inference time is calculated for this operation
+            # outputs = model(img)
+            start_time = time.time()
+            img.to(device)
+
+            # Yitao:outputs contains results till the early exit layer
+            # We use the bottom one for prediction
+            outputs = model(img)[-1] 
+
+            time_per_video = time.time() - start_time
+            total_inference_time += time_per_video
+            # end of model inference
+            
+            logits, boxes, masks = outputs['pred_logits'].softmax(-1)[0,:,:-1], outputs['pred_boxes'][0], outputs['pred_masks'][0]
+                        
 
             import numpy as np
-            # breakpoint()
-
             np_array = masks.detach().cpu().numpy()
-            np.save("masks.npy", np_array)
+            np.save("masks_ee.npy", np_array)
             
             img_np_array = img.detach().cpu().numpy()
-            np.save("img.npy", img_np_array)
+            np.save("img_ee.npy", img_np_array)
 
-            
+
             pred_masks =F.interpolate(masks.reshape(num_frames,num_ins,masks.shape[-2],masks.shape[-1]),(im.size[1],im.size[0]),mode="bilinear").sigmoid().cpu().detach().numpy()>0.5
             pred_logits = logits.reshape(num_frames,num_ins,logits.shape[-1]).cpu().detach().numpy()
             pred_masks = pred_masks[:length] 
 
-            # pred_masks_np = pred_masks.detach().cpu().numpy()
-            np.save("pred_masks.npy", pred_masks)
-            
-            
-            pred_logits = pred_logits[:length]
 
+            np.save("pred_masks_ee.npy", pred_masks)
+
+            pred_logits = pred_logits[:length]
             pred_scores = np.max(pred_logits,axis=-1)
             pred_logits = np.argmax(pred_logits,axis=-1)
 
-            np.save("pred_logits.npy", pred_logits)
+            np.save("pred_logits_ee.npy", pred_logits)
             exit()
-
             for m in range(num_ins):
-                if pred_masks[:,m].max()==0:
+                if pred_masks[:,m].max() == 0:
                     continue
                 score = pred_scores[:,m].mean()
                 #category_id = pred_logits[:,m][pred_scores[:,m].argmax()]
@@ -248,7 +276,6 @@ def main(args):
                 # that's why this loop works
                 # for the reduced model, pred_scores is [3, 5], length is still 36 -> out of bound
                 # we use a simple hack to change the length to num_frames 
-                # use length for non-reduced model
                 # for n in range(length):
                 for n in range(num_frames):
                     if pred_scores[n,m] < 0.001:
@@ -258,12 +285,14 @@ def main(args):
                         rle = mask_util.encode(np.array(mask[:,:,np.newaxis], order='F'))[0]
                         rle["counts"] = rle["counts"].decode("utf-8")
                         segmentation.append(rle)
-                                
                 instance['segmentations'] = segmentation
                 result.append(instance)
-    with open(args.save_path, 'w', encoding='utf-8') as f:
-        json.dump(result,f)
-                    
+    
+    print(f'Inference time {total_inference_time}')
+    # with open(args.save_path, 'w', encoding='utf-8') as f:
+    #     json.dump(result,f)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('VisTR inference script', parents=[get_args_parser()])
     args = parser.parse_args()

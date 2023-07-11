@@ -233,6 +233,8 @@ def main(args):
             # end of model inference
             
             logits, boxes, masks = outputs['pred_logits'].softmax(-1)[0,:,:-1], outputs['pred_boxes'][0], outputs['pred_masks'][0]
+                        
+            
             pred_masks =F.interpolate(masks.reshape(num_frames,num_ins,masks.shape[-2],masks.shape[-1]),(im.size[1],im.size[0]),mode="bilinear").sigmoid().cpu().detach().numpy()>0.5
             pred_logits = logits.reshape(num_frames,num_ins,logits.shape[-1]).cpu().detach().numpy()
             pred_masks = pred_masks[:length] 
@@ -254,7 +256,8 @@ def main(args):
                 # for the reduced model, pred_scores is [3, 5], length is still 36 -> out of bound
                 # we use a simple hack to change the length to num_frames 
                 # for n in range(length):
-                for n in range(num_frames):
+
+                for n in range(min(num_frames, length)): # there are cases where num_frames is big and the pred_scores array run out of bound
                     if pred_scores[n,m] < 0.001:
                         segmentation.append(None)
                     else:
